@@ -3,16 +3,17 @@ set -euo pipefail
 
 # q  <question>              Ask a new question (creates a new session)
 # q -m <question>            Same, but inject relevant notes from memory.md
-# fq <question>              Follow up on the most recent session
-# fq <session-id> <question> Follow up on a specific session (id from mq)
+# fq <question>              Follow up on latest lq-picked session, else newest session
+# fq <session-id> <question> Follow up on a specific session (id from lq)
 # lq                         List the 10 newest sessions and stay interactive:
-#                            0-9 copies that session id to the clipboard, q quits
+#                            0-9 copies that session id to the clipboard and remembers it for fq, q quits
 # lq --flush [days]          Distill sessions older than [days] (default 30)
 #                            into memory.md, then delete them
 
 Q_HOME="${Q_HOME:-$HOME/.q}"
 Q_SESSION_DIR="$Q_HOME/sessions"
 Q_MEMORY_FILE="$Q_HOME/memory.md"
+LATEST_Q_SESSION_FILE="$Q_HOME/LATEST_Q_SESSION"
 
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
@@ -172,6 +173,10 @@ cmd_fq() {
     fi
   fi
 
+  if [ -z "$session_file" ] && [ -s "$LATEST_Q_SESSION_FILE" ]; then
+    session_file="$(resolve_session "$(cat "$LATEST_Q_SESSION_FILE")")"
+  fi
+
   if [ -z "$session_file" ]; then
     session_file="$(latest_session)"
   fi
@@ -235,20 +240,21 @@ cmd_lq() {
     i=$((i + 1))
   done <<<"$files"
 
-  # Interactive picker: a digit copies that session's full id, q quits.
+  # Interactive picker: a digit copies that session's full id and remembers it for fq, q quits.
   local choice
   while :; do
-    printf '(0-%d: copy session id, q: quit) > ' "$((i - 1))" >&2
+    printf '(0-%d: select/copy session id for fq, q: quit) > ' "$((i - 1))" >&2
     IFS= read -r choice </dev/tty || break
     case "$choice" in
     q) break ;;
     [0-9])
       if [ "$choice" -lt "$i" ]; then
+        printf '%s\n' "${ids[choice]}" > "$LATEST_Q_SESSION_FILE"
         if command -v pbcopy >/dev/null 2>&1; then
           printf '%s' "${ids[choice]}" | pbcopy
-          echo "copied ${ids[choice]} — paste with: fq <cmd+v> <question>" >&2
+          echo "selected ${ids[choice]} for fq and copied it" >&2
         else
-          echo "${ids[choice]}" >&2
+          echo "selected ${ids[choice]} for fq" >&2
         fi
       else
         echo "no session $choice" >&2
