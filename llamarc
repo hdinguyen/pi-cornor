@@ -1,0 +1,113 @@
+export LLAMA_DEFAULT_MODEL="Qwen/Qwen3-14B-GGUF:Q5_K_M"
+export LLAMA_HOST="${LLAMA_HOST:-127.0.0.1}"
+export LLAMA_PORT="${LLAMA_PORT:-8080}"
+export LLAMA_LOG="${LLAMA_LOG:-$HOME/.llama-server.log}"
+export LLAMA_PID="${LLAMA_PID:-$HOME/.llama-server.pid}"
+export LLAMA_MODEL_FILE="${LLAMA_MODEL_FILE:-$HOME/.llama-server.model}"
+
+LLAMA_MODELS=(
+  "Qwen/Qwen3-14B-GGUF:Q5_K_M"
+  "Qwen/Qwen3-8B-GGUF:Q5_K_M"
+  "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF:Q5_K_M"
+  "bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF:Q5_K_M"
+)
+
+llama-start() {
+  if [ -f "$LLAMA_PID" ] && kill -0 "$(cat "$LLAMA_PID")" 2>/dev/null; then
+    echo "llama-server already running: PID $(cat "$LLAMA_PID")"
+    return 0
+  fi
+
+  echo "Choose model:"
+  echo "0) $LLAMA_DEFAULT_MODEL  [default]"
+
+  local idx model choice selected_model
+  idx=1
+  for model in "${LLAMA_MODELS[@]}"; do
+    [ "$model" = "$LLAMA_DEFAULT_MODEL" ] && continue
+    echo "$idx) $model"
+    idx=$((idx + 1))
+  done
+
+  printf "Model [0]: "
+  read choice
+  [ -z "$choice" ] && choice=0
+
+  if [ "$choice" = "0" ]; then
+    selected_model="$LLAMA_DEFAULT_MODEL"
+  else
+    idx=1
+    selected_model=""
+    for model in "${LLAMA_MODELS[@]}"; do
+      [ "$model" = "$LLAMA_DEFAULT_MODEL" ] && continue
+      if [ "$idx" = "$choice" ]; then
+        selected_model="$model"
+        break
+      fi
+      idx=$((idx + 1))
+    done
+  fi
+
+  if [ -z "$selected_model" ]; then
+    echo "Invalid model choice: $choice"
+    return 1
+  fi
+
+  : > "$LLAMA_LOG" || return 1
+
+  nohup llama serve \
+    -hf "$selected_model" \
+    --host "$LLAMA_HOST" \
+    --port "$LLAMA_PORT" \
+    >> "$LLAMA_LOG" 2>&1 &
+
+  local pid=$!
+  echo "$pid" > "$LLAMA_PID"
+  echo "$selected_model" > "$LLAMA_MODEL_FILE"
+
+  sleep 1
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "llama-server failed to start"
+    echo "log: $LLAMA_LOG"
+    tail -40 "$LLAMA_LOG"
+    rm -f "$LLAMA_PID"
+    return 1
+  fi
+
+  echo "llama-server started: PID $pid"
+  echo "model: $selected_model"
+  echo "url: http://$LLAMA_HOST:$LLAMA_PORT"
+  echo "log: $LLAMA_LOG"
+}
+
+llama-stop() {
+  if [ ! -f "$LLAMA_PID" ]; then
+    echo "llama-server stopped"
+    return 0
+  fi
+
+  local pid
+  pid="$(cat "$LLAMA_PID")"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid"
+    echo "llama-server stopped: PID $pid"
+  else
+    echo "llama-server stopped"
+  fi
+  rm -f "$LLAMA_PID"
+}
+
+llama-status() {
+  if [ -f "$LLAMA_PID" ] && kill -0 "$(cat "$LLAMA_PID")" 2>/dev/null; then
+    echo "running: PID $(cat "$LLAMA_PID")"
+    [ -f "$LLAMA_MODEL_FILE" ] && echo "model: $(cat "$LLAMA_MODEL_FILE")"
+    curl -s "http://$LLAMA_HOST:$LLAMA_PORT/health" || true
+    echo
+  else
+    echo "stopped"
+  fi
+}
+
+llama-log() {
+  tail -f "$LLAMA_LOG"
+}
