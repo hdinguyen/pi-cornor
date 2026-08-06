@@ -32,6 +32,79 @@ My own agent corner — quick terminal Q&A powered by [pi](https://pi.dev).
   only matching sections are injected. No match → the question is asked
   without memory, with a note on stderr.
 
+## Local LLM with llama.cpp (`llamarc`)
+
+Use `llamarc` when you want `q`/`fq`/`lq` to use a llama.cpp server on your machine.
+
+Install llama.cpp first. On macOS, one option is:
+
+```bash
+brew install llama.cpp
+```
+
+Load the helper functions:
+
+```bash
+source "$PWD/llamarc"
+```
+
+Start a local model server:
+
+```bash
+llama-start
+```
+
+The helper asks which Hugging Face GGUF model to run, then starts llama.cpp at `http://127.0.0.1:8080` by default. Useful commands:
+
+```bash
+llama-status
+llama-log
+llama-stop
+```
+
+Configure pi to talk to that OpenAI-compatible llama.cpp endpoint. Create or edit `~/.pi/agent/models.json`:
+
+```json
+{
+  "providers": {
+    "llama-local": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "llama",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false
+      },
+      "models": [
+        {
+          "id": "Qwen/Qwen3-14B-GGUF:Q5_K_M",
+          "name": "Qwen3 14B GGUF local",
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    }
+  }
+}
+```
+
+If you choose a different model in `llama-start`, change the model `id` above to the value shown by `llama-start` or stored in `~/.llama-server.model`.
+
+Make this local model the default for `q` by adding it to `~/.pi/agent/settings.json`:
+
+```json
+{
+  "defaultProvider": "llama-local",
+  "defaultModel": "Qwen/Qwen3-14B-GGUF:Q5_K_M"
+}
+```
+
+Then run:
+
+```bash
+q "Explain this repo"
+fq "Summarize the last answer"
+```
+
 ## Installation
 
 ### Option 1: Run instantly on the same machine
